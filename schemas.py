@@ -1,60 +1,153 @@
-from pydantic import BaseModel
-from typing import Optional
+# path: schemas.py
+from typing import Optional, List
 
-# --- [ 1. (Step 1~3) 기본 회원가입 신청서 ] ---
-class UserCreate(BaseModel):
-    email: str
-    password: str
-    name: str
+from pydantic import BaseModel, EmailStr, ConfigDict
+
+
+# ============================================================
+# 1. User / Auth
+# ============================================================
+
+
+class UserBase(BaseModel):
+    login_id: str
+    real_name: str
+    nickname: str
     birth_year: int
-    gender: Optional[str] = None
-    region: str
-    school_name: str
-    school_type: str
-    admission_year: int
+    gender: Optional[str] = None  # 'male','female','other'
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
 
-# --- [ 2. (Step 4) 추가 정보 신청서 ] ---
-class UserDetailCreate(BaseModel):
-    transfer_history: Optional[str] = None
-    class_info: Optional[str] = None
-    club_name: Optional[str] = None
-    nickname: Optional[str] = None
-    memory_keywords: Optional[str] = None
 
-# --- [ 3. 추가 정보 확인증 ] ---
-class UserDetail(UserDetailCreate):
+class UserCreate(UserBase):
+    password: str  # 평문 비밀번호 (서버에서 해시)
+
+
+class User(UserBase):
     id: int
-    owner_id: int
-    class Config:
-        from_attributes = True
+    is_verified: bool
+    status: str
 
-# --- [ 4. 회원증 (기본 정보) ] ---
-class User(BaseModel):
-    id: int
-    email: str
-    name: str
-    region: str
-    school_name: str
-    is_active: bool
-    # (나중에 추가 정보도 같이 보여줄 수 있게 설정 가능)
-    detail: Optional[UserDetail] = None 
+    model_config = ConfigDict(from_attributes=True)
 
-    class Config:
-        from_attributes = True
 
-# --- [ 5. 기타 (토큰, 게시물 등) ] ---
 class Token(BaseModel):
     access_token: str
     token_type: str
 
-class PostCreate(BaseModel):
-    title: str
+
+# ============================================================
+# 2. 프로필 / 학교
+# ============================================================
+
+
+class UserProfileBase(BaseModel):
+    residence_city: Optional[str] = None
+    residence_district: Optional[str] = None
+    residence_neighborhood: Optional[str] = None
+    profile_visibility: Optional[str] = "friends"
+
+
+class UserProfileUpdate(UserProfileBase):
+    pass
+
+
+class UserProfile(UserProfileBase):
+    user_id: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UserSchoolAnchorBase(BaseModel):
+    institution_id: int
+    school_level: str  # 'elementary','middle','high'
+    entry_year: int
+    graduation_year: Optional[int] = None
+    is_primary: Optional[bool] = True
+
+
+class UserSchoolAnchorCreate(UserSchoolAnchorBase):
+    pass
+
+
+class UserSchoolAnchor(UserSchoolAnchorBase):
+    id: int
+    user_id: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UserKeywordBase(BaseModel):
+    keyword: str
+    weight: Optional[int] = None
+
+
+class UserKeywordCreate(UserKeywordBase):
+    pass
+
+
+class UserKeyword(UserKeywordBase):
+    id: int
+    user_id: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ============================================================
+# 3. 기관(학교)
+# ============================================================
+
+
+class Institution(BaseModel):
+    id: int
+    name: str
+    institution_type: str
+    region_city: Optional[str] = None
+    region_district: Optional[str] = None
+    region_neighborhood: Optional[str] = None
+    address: Optional[str] = None
+    is_active: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ============================================================
+# 4. 커뮤니티 / 게시글 (간단)
+# ============================================================
+
+
+class CommunityBase(BaseModel):
+    institution_id: int
+    school_level: str
+    entry_year: int
+    residence_city: Optional[str] = None
+    residence_district: Optional[str] = None
+    name: str
+    description: Optional[str] = None
+
+
+class CommunityCreate(CommunityBase):
+    pass
+
+
+class Community(CommunityBase):
+    id: int
+    status: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CommunityPostBase(BaseModel):
+    community_id: int
     content: str
 
-class Post(BaseModel):
+
+class CommunityPostCreate(CommunityPostBase):
+    pass
+
+
+class CommunityPost(CommunityPostBase):
     id: int
-    title: str
-    content: str
-    owner_id: int
-    class Config:
-        from_attributes = True
+    author_user_id: int
+
+    model_config = ConfigDict(from_attributes=True)

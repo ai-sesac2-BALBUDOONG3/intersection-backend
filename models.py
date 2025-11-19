@@ -1,63 +1,454 @@
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey
+# path: models.py
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    SmallInteger,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.orm import relationship
-from database import Base 
 
-# [ 1. 기본 회원 정보 (Step 1~3) ]
+from database import Base
+
+
+# ============================================================
+# 1. 사용자 / 인증 / 프로필 / 차단 / 친구
+# ============================================================
+
+
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
-    
-    # [Step 1: 계정 정보]
-    email = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String, nullable=False)
-    
-    # [Step 2: 기본 프로필]
-    name = Column(String, nullable=False)       # 실명 (PASS 인증 전제)
-    birth_year = Column(Integer, nullable=False) # 출생연도 (수정 불가 로직용)
-    gender = Column(String, nullable=True)       # 성별
-    
-    # [Step 3: 학교/지역 정보 (교집합 매칭용)]
-    region = Column(String, index=True, nullable=False)      # 거주 지역
-    school_name = Column(String, index=True, nullable=False) # 학교명
-    school_type = Column(String, nullable=False)             # 초/중/고 구분
-    admission_year = Column(Integer, nullable=False)         # 입학년도
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
 
-    is_active = Column(Boolean, default=True)
+    # 로그인 계정
+    login_id = Column(Text, nullable=False, unique=True, index=True)  # intersection ID
+    password_hash = Column(Text, nullable=False)
 
-    # 관계 설정
-    posts = relationship("Post", back_populates="owner")
-    # [⚡️ 추가] 추가 정보와 1:1 연결
-    detail = relationship("UserDetail", back_populates="owner", uselist=False)
+    # 기본 프로필
+    real_name = Column(Text, nullable=False)
+    nickname = Column(Text, nullable=False)
+    email = Column(Text, unique=True)
+    phone = Column(Text, unique=True)
+    birth_year = Column(SmallInteger, nullable=False)
+    gender = Column(String(10))  # 'male','female','other'
+
+    # 실명인증
+    is_verified = Column(Boolean, nullable=False, server_default="false")
+    verification_provider = Column(String(50))
+    verification_at = Column(DateTime(timezone=True))
+
+    # 계정 상태
+    status = Column(String(20), nullable=False, server_default="active")
+    signup_step = Column(SmallInteger, nullable=False, server_default="4")
+
+    # 공통 메타
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+    is_deleted = Column(Boolean, nullable=False, server_default="false")
+    deleted_at = Column(DateTime(timezone=True))
+
+    # 관계
+    profile = relationship(
+        "UserProfile",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    school_anchors = relationship(
+        "UserSchoolAnchor",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    school_histories = relationship(
+        "UserSchoolHistory",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    keywords = relationship(
+        "UserKeyword",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
 
 
-# [ ⚡️ (신규!) 추가 정보 (Step 4) ]
-class UserDetail(Base):
-    __tablename__ = "user_details"
+class UserProfile(Base):
+    __tablename__ = "user_profiles"
 
-    id = Column(Integer, primary_key=True, index=True)
-    
-    # 세부 학교 이력
-    transfer_history = Column(String, nullable=True) # 전학 이력
-    class_info = Column(String, nullable=True)       # 반 정보 (예: 3학년 2반)
-    club_name = Column(String, nullable=True)        # 동아리
-    nickname = Column(String, nullable=True)         # 당시 별명
-    
-    # 추억 키워드 (쉼표로 구분해서 저장, 예: "매점,체육대회,떡볶이")
-    memory_keywords = Column(String, nullable=True)
-    
-    # 주인님(User)과 연결
-    owner_id = Column(Integer, ForeignKey("users.id"))
-    owner = relationship("User", back_populates="detail")
+    user_id = Column(
+        BigInteger,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+    residence_city = Column(Text)         # 시/도
+    residence_district = Column(Text)     # 구/군
+    residence_neighborhood = Column(Text) # 동/읍/면
+
+    profile_visibility = Column(
+        String(20), nullable=False, server_default="friends"
+    )  # 'public','friends','private'
+
+    # AI 추천용(지금은 타입만 맞춰두고 실제 임베딩 로직은 나중에)
+    matching_embedding = Column(
+        Text, nullable=True
+    )  # vector(1536)를 쓰려면 pgvector 확장 필요. 지금은 Text로 placeholder.
+    embedding_model = Column(String(100))
+    embedding_model_version = Column(String(50))
+    embedding_dimension = Column(SmallInteger)
+    embedded_at = Column(DateTime(timezone=True))
+
+    updated_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    user = relationship("User", back_populates="profile")
 
 
-# [ 3. 게시물 ]
-class Post(Base):
-    __tablename__ = "posts"
+class UserBlock(Base):
+    __tablename__ = "user_blocks"
 
-    id = Column(Integer, primary_key=True, index=True)
-    title = Column(String, index=True)
-    content = Column(String)
-    owner_id = Column(Integer, ForeignKey("users.id"))
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    blocker_user_id = Column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    blocked_user_id = Column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    reason = Column(Text)
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
-    owner = relationship("User", back_populates="posts")
+
+class UserFriendship(Base):
+    __tablename__ = "user_friendships"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    friend_user_id = Column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    status = Column(String(20), nullable=False, server_default="pending")
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+# ============================================================
+# 2. 기관(학교) / 동기화
+# ============================================================
+
+
+class SyncJob(Base):
+    __tablename__ = "sync_jobs"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    external_source = Column(String(50), nullable=False)
+    started_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    finished_at = Column(DateTime(timezone=True))
+    status = Column(String(20), nullable=False, server_default="running")
+    fetched_count = Column(Integer, nullable=False, server_default="0")
+    upserted_count = Column(Integer, nullable=False, server_default="0")
+    deleted_count = Column(Integer, nullable=False, server_default="0")
+    error_message = Column(Text)
+
+
+class InstitutionRaw(Base):
+    __tablename__ = "institution_raw"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    sync_job_id = Column(
+        BigInteger, ForeignKey("sync_jobs.id", ondelete="CASCADE"), nullable=False
+    )
+    external_source = Column(String(50), nullable=False)
+    external_id = Column(Text, nullable=False)
+    payload = Column(Text, nullable=False)  # JSONB → Text 로 placeholder
+    received_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    processed = Column(Boolean, nullable=False, server_default="false")
+    processed_at = Column(DateTime(timezone=True))
+
+
+class Institution(Base):
+    __tablename__ = "institutions"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+
+    external_source = Column(String(50), nullable=False)
+    external_id = Column(Text, nullable=False)
+
+    name = Column(Text, nullable=False)
+    name_normalized = Column(Text)
+
+    institution_type = Column(String(30), nullable=False)
+
+    country_code = Column(String(2), nullable=False, server_default="KR")
+
+    region_city = Column(Text)
+    region_district = Column(Text)
+    region_neighborhood = Column(Text)
+
+    address = Column(Text)
+    postal_code = Column(Text)
+
+    latitude = Column(Numeric(9, 6))
+    longitude = Column(Numeric(9, 6))
+
+    is_active = Column(Boolean, nullable=False, server_default="true")
+
+    opened_at = Column(Date)
+    closed_at = Column(Date)
+
+    last_synced_at = Column(DateTime(timezone=True))
+    last_sync_job_id = Column(BigInteger)
+
+
+# ============================================================
+# 3. 사용자 학교 정보 / 키워드
+# ============================================================
+
+
+class UserSchoolAnchor(Base):
+    __tablename__ = "user_school_anchors"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    institution_id = Column(
+        BigInteger, ForeignKey("institutions.id"), nullable=False
+    )
+    school_level = Column(String(20), nullable=False)  # 'elementary','middle','high'
+    entry_year = Column(SmallInteger, nullable=False)
+    graduation_year = Column(SmallInteger)
+    is_primary = Column(Boolean, nullable=False, server_default="true")
+
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    user = relationship("User", back_populates="school_anchors")
+    institution = relationship("Institution")
+
+
+class UserSchoolHistory(Base):
+    __tablename__ = "user_school_histories"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    institution_id = Column(
+        BigInteger, ForeignKey("institutions.id"), nullable=False
+    )
+
+    school_level = Column(String(20), nullable=False)
+    start_year = Column(SmallInteger)
+    end_year = Column(SmallInteger)
+    grade = Column(SmallInteger)
+    class_group = Column(Text)
+    homeroom_teacher = Column(Text)
+    club_name = Column(Text)
+    nickname_in_class = Column(Text)
+    is_transfer = Column(Boolean, nullable=False, server_default="false")
+    notes = Column(Text)
+
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    user = relationship("User", back_populates="school_histories")
+    institution = relationship("Institution")
+
+
+class UserKeyword(Base):
+    __tablename__ = "user_keywords"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    keyword = Column(Text, nullable=False)
+    weight = Column(SmallInteger)
+
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    user = relationship("User", back_populates="keywords")
+
+
+# ============================================================
+# 4. 커뮤니티 / 게시글 / 댓글 / 신고 (간단 버전)
+# ============================================================
+
+
+class Community(Base):
+    __tablename__ = "communities"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    institution_id = Column(
+        BigInteger, ForeignKey("institutions.id"), nullable=False
+    )
+    school_level = Column(String(20), nullable=False)
+    entry_year = Column(SmallInteger, nullable=False)
+    residence_city = Column(Text)
+    residence_district = Column(Text)
+
+    name = Column(Text, nullable=False)
+    description = Column(Text)
+    status = Column(String(20), nullable=False, server_default="active")
+
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class CommunityMember(Base):
+    __tablename__ = "community_members"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    community_id = Column(
+        BigInteger, ForeignKey("communities.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id = Column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    role = Column(String(20), nullable=False, server_default="member")
+    joined_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    last_seen_at = Column(DateTime(timezone=True))
+
+
+class CommunityPost(Base):
+    __tablename__ = "community_posts"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    community_id = Column(
+        BigInteger, ForeignKey("communities.id", ondelete="CASCADE"), nullable=False
+    )
+    author_user_id = Column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+
+    content = Column(Text, nullable=False)
+    image_count = Column(SmallInteger, nullable=False, server_default="0")
+
+    like_count = Column(Integer, nullable=False, server_default="0")
+    comment_count = Column(Integer, nullable=False, server_default="0")
+
+    status = Column(String(20), nullable=False, server_default="active")
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+    is_deleted = Column(Boolean, nullable=False, server_default="false")
+    deleted_at = Column(DateTime(timezone=True))
+
+
+class CommunityComment(Base):
+    __tablename__ = "community_comments"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    post_id = Column(
+        BigInteger,
+        ForeignKey("community_posts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id = Column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    parent_comment_id = Column(
+        BigInteger, ForeignKey("community_comments.id"), nullable=True
+    )
+
+    content = Column(Text, nullable=False)
+    status = Column(String(20), nullable=False, server_default="active")
+
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+    is_deleted = Column(Boolean, nullable=False, server_default="false")
+    deleted_at = Column(DateTime(timezone=True))
+
+
+class Report(Base):
+    __tablename__ = "reports"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    reporter_user_id = Column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    reported_user_id = Column(BigInteger, ForeignKey("users.id"))
+    target_type = Column(String(30), nullable=False)
+    target_id = Column(BigInteger, nullable=False)
+    reason_category = Column(String(50))
+    reason_text = Column(Text)
+    status = Column(String(20), nullable=False, server_default="pending")
+    resolved_by_user_id = Column(BigInteger, ForeignKey("users.id"))
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+    resolved_at = Column(DateTime(timezone=True))
