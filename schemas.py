@@ -1,59 +1,60 @@
 from pydantic import BaseModel
-from typing import Optional # '선택 사항'을 위해 필요
+from typing import Optional
 
-# --- 1. '회원가입 신청서' (입력용) ---
-# 손님이 회원가입할 때 딱 이 정보만 받습니다.
+# --- [ 1. (Step 1~3) 기본 회원가입 신청서 ] ---
 class UserCreate(BaseModel):
     email: str
-    password: str # '원본' 비밀번호를 받습니다.
-
-    name : str
-    birth_year : int
-    gender : Optional[str] = None  # 선택 사항
-
-
+    password: str
+    name: str
+    birth_year: int
+    gender: Optional[str] = None
     region: str
-    school_name : str
-    school_type : str
-    admission_year : int 
+    school_name: str
+    school_type: str
+    admission_year: int
 
-# --- 2. '발급용 회원증' (출력용) ---
-# 회원가입이 성공하거나, 정보를 조회할 때 이 양식으로 보여줍니다.
-# [ ⚠️ 보안! ] 절대로 'hashed_password'는 보여주지 않습니다!
+# --- [ 2. (Step 4) 추가 정보 신청서 ] ---
+class UserDetailCreate(BaseModel):
+    transfer_history: Optional[str] = None
+    class_info: Optional[str] = None
+    club_name: Optional[str] = None
+    nickname: Optional[str] = None
+    memory_keywords: Optional[str] = None
+
+# --- [ 3. 추가 정보 확인증 ] ---
+class UserDetail(UserDetailCreate):
+    id: int
+    owner_id: int
+    class Config:
+        from_attributes = True
+
+# --- [ 4. 회원증 (기본 정보) ] ---
 class User(BaseModel):
     id: int
     email: str
+    name: str
     region: str
     school_name: str
     is_active: bool
-
-    # [ 💡 Tip! ]
-    # 이 설정은 SQLAlchemy '리모컨'이 '창고'에서 데이터를 꺼낸 뒤,
-    # 이 '회원증' 양식에 맞게 자동으로 변환해 주라고 알려주는 스위치입니다.
-    class Config:
-        from_attributes = True 
-        # (이전 버전에서는 orm_mode = True 였습니다)
-
-    
-# --- 3. '출입증' 양식 ---
-# 로그인을 할 때 이 '출입증' 양식으로 토큰을 발급합니다.
-class Token(BaseModel):
-    access_token: str # '출입증' (jwt 토큰)
-    token_type: str # '출입증' 종류 (항상 "bearer" 입니다)
-
-
-#게시물 신청서 (입력용)
-class PostCreate(BaseModel):
-    title: str
-    content: str
-
-#게시물 양식 (출력용)
-class Post(BaseModel):
-    id: int
-    title: str
-    content: str
-    owner_id: int # 게시물 소유자 ID
+    # (나중에 추가 정보도 같이 보여줄 수 있게 설정 가능)
+    detail: Optional[UserDetail] = None 
 
     class Config:
         from_attributes = True
 
+# --- [ 5. 기타 (토큰, 게시물 등) ] ---
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class PostCreate(BaseModel):
+    title: str
+    content: str
+
+class Post(BaseModel):
+    id: int
+    title: str
+    content: str
+    owner_id: int
+    class Config:
+        from_attributes = True
