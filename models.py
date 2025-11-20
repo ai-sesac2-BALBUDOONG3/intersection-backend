@@ -1,4 +1,5 @@
 # path: models.py
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -103,10 +104,8 @@ class UserProfile(Base):
         String(20), nullable=False, server_default="friends"
     )  # 'public','friends','private'
 
-    # AI 추천용(지금은 타입만 맞춰두고 실제 임베딩 로직은 나중에)
-    matching_embedding = Column(
-        Text, nullable=True
-    )  # vector(1536)를 쓰려면 pgvector 확장 필요. 지금은 Text로 placeholder.
+    # AI 추천용(현재는 placeholder)
+    matching_embedding = Column(Text, nullable=True)
     embedding_model = Column(String(100))
     embedding_model_version = Column(String(50))
     embedding_dimension = Column(SmallInteger)
@@ -187,7 +186,7 @@ class InstitutionRaw(Base):
     )
     external_source = Column(String(50), nullable=False)
     external_id = Column(Text, nullable=False)
-    payload = Column(Text, nullable=False)  # JSONB → Text 로 placeholder
+    payload = Column(Text, nullable=False)  # JSONB → Text placeholder
     received_at = Column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -228,6 +227,10 @@ class Institution(Base):
     last_synced_at = Column(DateTime(timezone=True))
     last_sync_job_id = Column(BigInteger)
 
+    # (옵션) 역관계 필요하면 추가 가능
+    # school_anchors = relationship("UserSchoolAnchor", back_populates="institution")
+    # school_histories = relationship("UserSchoolHistory", back_populates="institution")
+
 
 # ============================================================
 # 3. 사용자 학교 정보 / 키워드
@@ -248,6 +251,9 @@ class UserSchoolAnchor(Base):
     entry_year = Column(SmallInteger, nullable=False)
     graduation_year = Column(SmallInteger)
     is_primary = Column(Boolean, nullable=False, server_default="true")
+
+    # Azure 임베딩 벡터(1536차원, nullable)
+    anchor_embedding = Column(Vector(1536), nullable=True)
 
     created_at = Column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -317,7 +323,7 @@ class UserKeyword(Base):
 
 
 # ============================================================
-# 4. 커뮤니티 / 게시글 / 댓글 / 신고 (간단 버전)
+# 4. 커뮤니티 / 게시글 / 댓글 / 신고
 # ============================================================
 
 
