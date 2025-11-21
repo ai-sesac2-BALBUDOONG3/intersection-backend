@@ -11,6 +11,7 @@ from typing import Optional
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt  # [수정] JWTError 추가!
 from sqlalchemy.orm import Session
 
 import crud
@@ -34,15 +35,19 @@ def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
+# ...
     try:
         payload = security.decode_access_token(token)
-        user_id: Optional[int] = payload.get("sub")
+        user_id: str = payload.get("sub")
         if user_id is None:
             raise credentials_exception
-    except ValueError:
+    except (JWTError, ValueError):
         raise credentials_exception
 
-    user = crud.get_user(db, user_id=user_id)
+    # [수정 포인트] user_id를 int()로 변환해서 넘겨줘야 합니다!
+    user = crud.get_user(db, user_id=int(user_id)) 
+    
     if user is None:
         raise credentials_exception
+    
     return user
