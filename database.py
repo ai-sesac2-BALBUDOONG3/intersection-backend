@@ -58,7 +58,8 @@ def check_db_health() -> dict:
             conn.execute(text("SELECT 1"))
         return {"ok": True, "url": DATABASE_URL}
     except Exception as exc:
-        return {"ok": False, "error": str(exc)}
+        # include exception class name to aid debugging
+        return {"ok": False, "error": f"{exc.__class__.__name__}: {str(exc)}"}
 
 
 if __name__ == "__main__":

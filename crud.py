@@ -106,3 +106,8 @@ def get_posts_by_owner(db: Session, owner_id: int) -> list[models.Post]:
         .order_by(models.Post.id.desc())
         .all()
     )
+
+# --- 3. 게시물 목록 조회 ---
+def get_posts(db: Session, skip: int = 0, limit: int = 100):
+    # DB에서 Post를 긁어오는 진짜 코드는 여기에 있습니다.
+    return db.query(models.Post).offset(skip).limit(limit).all()
