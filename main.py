@@ -3,12 +3,20 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from typing import List
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse # 👈 카카오 리다이렉트를 위해 추가
+from urllib.parse import urlencode # 👈 URL 인코딩을 위해 추가
+import httpx # 👈 카카오 API 통신을 위해 추가
+import os 
+import logging 
 
 import models
 import schemas
 import crud
 import security
 from database import SessionLocal, engine
+
+# 로깅 설정
+logging.basicConfig(level=logging.INFO)
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -31,6 +39,12 @@ def get_db():
     finally:
         db.close()
 
+# ⚠️ ⭐️ 카카오 API 설정 (복사한 키 적용 완료) ⭐️
+KAKAO_REST_API_KEY = "bb1f874b622f79c88cce8a1b4080bb61"
+KAKAO_REDIRECT_URI = "http://127.0.0.1:8000/auth/kakao/callback"
+# -----------------------------------------------------------------------
+
+
 @app.get("/")
 def read_root():
     return {"message": "인터섹션 백엔드 기지에 오신 것을 환영합니다!"}
@@ -44,7 +58,7 @@ def create_user_endpoint(user_data: schemas.UserCreate, db: Session = Depends(ge
     new_user = crud.create_user(db=db, user=user_data)
     return new_user
 
-# 2. 로그인
+# 2. 로그인 (일반)
 @app.post("/token", response_model=schemas.Token)
 def login_for_access_token(login_data: schemas.LoginRequest, db: Session = Depends(get_db)):
     user = crud.get_user_by_email(db, email=login_data.email)
@@ -134,3 +148,76 @@ def create_comment_endpoint(post_id: int, comment: schemas.CommentCreate, db: Se
 @app.get("/posts/{post_id}/comments", response_model=List[schemas.Comment])
 def read_comments_endpoint(post_id: int, db: Session = Depends(get_db)):
     return crud.get_comments_by_post(db, post_id)
+
+
+# --------------------------------------------------------------------
+# ⭐️ [ 카카오 로그인 기능 ] ⭐️
+# --------------------------------------------------------------------
+
+# 15. 카카오 로그인 페이지로 이동
+@app.get("/auth/kakao/login")
+async def kakao_login():
+    """사용자를 카카오 로그인 페이지로 리다이렉트합니다."""
+    
+    params = {
+        "client_id": KAKAO_REST_API_KEY,
+        "redirect_uri": KAKAO_REDIRECT_URI,
+        "response_type": "code",
+    }
+    kakao_auth_url = "https://kauth.kakao.com/oauth/authorize?" + urlencode(params)
+    
+    # RedirectResponse를 사용하여 사용자를 카카오 로그인 창으로 보냅니다.
+    return RedirectResponse(kakao_auth_url)
+
+
+# 16. 카카오의 응답(콜백) 처리
+@app.get("/auth/kakao/callback", response_model=schemas.Token)
+async def kakao_callback(code: str, db: Session = Depends(get_db)):
+    """카카오로부터 인가 코드를 받아 토큰을 교환하고 사용자 정보를 처리합니다."""
+    
+    # 1. 인가 코드를 사용하여 접근 토큰 요청 (카카오 API 호출)
+    token_url = "https://kauth.kakao.com/oauth/token"
+    token_data = {
+        "grant_type": "authorization_code",
+        "client_id": KAKAO_REST_API_KEY,
+        "redirect_uri": KAKAO_REDIRECT_URI,
+        "code": code,
+    }
+    
+    async with httpx.AsyncClient() as client:
+        token_response = await client.post(token_url, data=token_data, headers={"Content-Type": "application/x-www-form-urlencoded"})
+        token_info = token_response.json()
+    
+    if "error" in token_info:
+        logging.error(f"Kakao Token Exchange Failed: {token_info}")
+        raise HTTPException(status_code=400, detail=f"카카오 토큰 교환 실패: {token_info.get('error_description', '알 수 없는 오류')}")
+
+    access_token = token_info.get("access_token")
+
+    # 2. 접근 토큰으로 사용자 정보 요청 (카카오 API 호출)
+    user_info_url = "https://kapi.kakao.com/v2/user/me"
+    headers = {"Authorization": f"Bearer {access_token}"}
+    
+    async with httpx.AsyncClient() as client:
+        user_response = await client.get(user_info_url, headers=headers)
+        user_info = user_response.json()
+        
+    # 3. 핵심 데이터 추출 및 DB 처리
+    kakao_id = str(user_info.get("id"))
+    kakao_account = user_info.get("kakao_account", {})
+    profile = kakao_account.get("profile", {})
+    email = kakao_account.get("email") # 이메일 동의를 받아야 함
+    nickname = profile.get("nickname", "카카오사용자")
+    
+    # 기존 사용자 확인
+    db_user = crud.get_user_by_kakao_id(db, kakao_id)
+    
+    if not db_user:
+        # 최초 로그인: 회원가입 처리 (crud.py에서 정의된 함수 사용)
+        db_user = crud.create_social_user(db, kakao_id, nickname, email)
+        
+    # 4. 서버 자체 JWT 토큰 발급 및 반환 (로그인 성공)
+    token_data = {"sub": db_user.email} 
+    server_access_token = security.create_access_token(data=token_data)
+    
+    return {"access_token": server_access_token, "token_type": "bearer"}
