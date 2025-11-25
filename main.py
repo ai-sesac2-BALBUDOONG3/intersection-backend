@@ -3,17 +3,21 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from typing import List
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse # 👈 카카오 리다이렉트를 위해 추가
-from urllib.parse import urlencode # 👈 URL 인코딩을 위해 추가
-import httpx # 👈 카카오 API 통신을 위해 추가
+from fastapi.responses import RedirectResponse
+from urllib.parse import urlencode
+import httpx
 import os 
 import logging 
+from dotenv import load_dotenv # 환경 변수 로드
 
 import models
 import schemas
 import crud
 import security
 from database import SessionLocal, engine
+
+# ⭐️ 환경 변수 로드 (최상단)
+load_dotenv() 
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -39,9 +43,9 @@ def get_db():
     finally:
         db.close()
 
-# ⚠️ ⭐️ 카카오 API 설정 (복사한 키 적용 완료) ⭐️
-KAKAO_REST_API_KEY = "bb1f874b622f79c88cce8a1b4080bb61"
-KAKAO_REDIRECT_URI = "http://127.0.0.1:8000/auth/kakao/callback"
+# ⭐️ 카카오 API 설정 (환경 변수에서 안전하게 불러옴) ⭐️
+KAKAO_REST_API_KEY = os.getenv("KAKAO_REST_API_KEY")
+KAKAO_REDIRECT_URI = os.getenv("KAKAO_REDIRECT_URI")
 # -----------------------------------------------------------------------
 
 
