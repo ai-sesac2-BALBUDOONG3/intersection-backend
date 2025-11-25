@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 import models, schemas
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
 # 1. 유저 조회
 def get_user_by_email(db: Session, email: str):
