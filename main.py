@@ -20,10 +20,19 @@ app = FastAPI(
     description="기억 교집합 기반 친구찾기 앱 Intersection 백엔드 API",
 )
 
-# CORS 설정 (Flutter / 기타 클라이언트에서 접근 가능하도록)
+# ----------------------------------------------------
+# CORS 설정
+#  - Flutter Web: http://localhost:포트번호 (포트는 매번 바뀌어도 허용)
+#  - 나중에 실제 프론트 도메인 생기면 origins 리스트에 추가
+# ----------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 필요 시 특정 도메인으로 제한 가능
+    # localhost:임의포트 모두 허용 (flutter run -d chrome)
+    allow_origin_regex=r"^http://localhost(:\d+)?$",
+    # 추후 배포된 프론트엔드 도메인 추가 예정
+    allow_origins=[
+        # 예시) "https://intersection-frontend.example.com",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
