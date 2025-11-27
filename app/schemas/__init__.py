@@ -11,8 +11,8 @@ from .school_history import (
     UserSchoolHistoryRead,
 )
 from .matching import (
-    MatchCandidateRead,
-    MatchCandidateWithExplanationRead,
+    MatchScoreBreakdown,
+    MatchRecommendation,
 )
 from .community import (
     CommunityCreate,
@@ -24,14 +24,18 @@ from .community import (
 )
 
 __all__ = [
+    # auth
     "UserRead",
     "UserRegisterRequest",
     "UserLoginRequest",
     "Token",
+    # school history
     "UserSchoolHistoryCreate",
     "UserSchoolHistoryRead",
-    "MatchCandidateRead",
-    "MatchCandidateWithExplanationRead",
+    # matching
+    "MatchScoreBreakdown",
+    "MatchRecommendation",
+    # community
     "CommunityCreate",
     "CommunityRead",
     "CommunityPostCreate",

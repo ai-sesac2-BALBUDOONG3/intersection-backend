@@ -1,113 +1,87 @@
 # app/api/routes/users.py
-from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from typing import List
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
-from app.db.session import get_db
+from app.api import deps
 from app.db import models
-from app.schemas.user import (
-    UserOut,
-    UserProfileOut,
-    UserProfileBase,
-    UserSchoolAnchorOut,
-    UserSchoolAnchorCreate,
-)
+from app.schemas.user import UserOut, UserUpdate
 
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-@router.get("/me", response_model=UserOut)
+@router.get("/me", response_model=UserOut, summary="내 프로필 조회")
 def get_me(
-    current_user: models.User = Depends(get_current_user),
-):
+    current_user=Depends(deps.get_current_user),
+) -> UserOut:
+    """
+    현재 로그인한 유저의 프로필을 반환.
+    - JWT 토큰에서 login_id를 복원 (deps.get_current_user)
+    - 탈퇴/삭제 상태가 아닌 유저만 허용
+    """
     return current_user
 
 
-@router.get("/me/profile", response_model=UserProfileOut)
-def get_my_profile(
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
-):
-    profile = (
-        db.execute(
-            select(models.UserProfile).where(models.UserProfile.user_id == current_user.id)
-        )
-        .scalars()
-        .first()
-    )
-    if not profile:
-        profile = models.UserProfile(user_id=current_user.id)
-        db.add(profile)
-        db.commit()
-        db.refresh(profile)
-    return profile
+@router.patch("/me", response_model=UserOut, summary="내 프로필 수정")
+def update_me(
+    payload: UserUpdate,
+    db: Session = Depends(deps.get_db),
+    current_user=Depends(deps.get_current_user),
+) -> UserOut:
+    """
+    현재 로그인한 유저의 닉네임/실명/이메일을 수정.
+    - 비어 있는 문자열은 무시 (기존 값 유지)
+    """
+    if payload.nickname is not None:
+        nickname = payload.nickname.strip()
+        if nickname:
+            current_user.nickname = nickname
 
+    if payload.real_name is not None:
+        real_name = payload.real_name.strip()
+        current_user.real_name = real_name or current_user.real_name
 
-@router.put("/me/profile", response_model=UserProfileOut)
-def update_my_profile(
-    payload: UserProfileBase,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
-):
-    profile = (
-        db.execute(
-            select(models.UserProfile).where(models.UserProfile.user_id == current_user.id)
-        )
-        .scalars()
-        .first()
-    )
-    if not profile:
-        profile = models.UserProfile(user_id=current_user.id)
-        db.add(profile)
+    if payload.email is not None:
+        current_user.email = payload.email
 
-    for field, value in payload.model_dump(exclude_unset=True).items():
-        setattr(profile, field, value)
-
+    db.add(current_user)
     db.commit()
-    db.refresh(profile)
-    return profile
+    db.refresh(current_user)
+    return current_user
 
 
-@router.get("/me/school-anchors", response_model=list[UserSchoolAnchorOut])
-def list_my_school_anchors(
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
-):
-    anchors = (
+@router.get(
+    "/{user_id}",
+    response_model=UserOut,
+    summary="특정 유저 프로필 조회",
+)
+def get_user_by_id(
+    user_id: int,
+    db: Session = Depends(deps.get_db),
+    current_user=Depends(deps.get_current_user),
+) -> UserOut:
+    """
+    ID로 다른 유저의 공개 프로필 조회.
+    - soft delete 된 유저(is_deleted = true)는 조회 불가.
+    """
+    user = (
         db.execute(
-            select(models.UserSchoolAnchor)
-            .where(
-                models.UserSchoolAnchor.user_id == current_user.id,
-                models.UserSchoolAnchor.is_deleted == False,
+            select(models.User).where(
+                models.User.id == user_id,
+                models.User.is_deleted == False,
             )
-            .order_by(models.UserSchoolAnchor.created_at.desc())
         )
         .scalars()
-        .all()
+        .first()
     )
-    return anchors
 
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="사용자를 찾을 수 없습니다.",
+        )
 
-@router.post("/me/school-anchors", response_model=UserSchoolAnchorOut)
-def create_my_school_anchor(
-    payload: UserSchoolAnchorCreate,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
-):
-    anchor = models.UserSchoolAnchor(
-        user_id=current_user.id,
-        institution_id=payload.institution_id,
-        title=payload.title,
-        description=payload.description,
-        time_start_year=payload.time_start_year,
-        time_end_year=payload.time_end_year,
-        region_city=payload.region_city,
-        region_district=payload.region_district,
-    )
-    db.add(anchor)
-    db.commit()
-    db.refresh(anchor)
-    return anchor
+    return user

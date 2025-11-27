@@ -1,5 +1,3 @@
-# app/api/routes/auth.py
-
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -14,7 +12,7 @@ from app.core.security import (
     verify_password,
 )
 from app.db.session import get_db
-from app.models.user import User
+from app.db.models import User  # ✅ 단일 모델 소스
 from app.schemas.auth import (
     Token,
     UserLoginRequest,
@@ -38,6 +36,13 @@ def register_user(
     payload: UserRegisterRequest,
     db: Session = Depends(get_db),
 ):
+    """
+    회원가입
+
+    - login_id 중복 체크
+    - 비밀번호 해시 저장
+    - user_profiles 기본 레코드 1개 자동 생성 시도
+    """
     # login_id 중복 체크
     existing = (
         db.query(User)
@@ -62,7 +67,6 @@ def register_user(
     db.flush()  # user.id 확보
 
     # user_profiles 기본 레코드 생성 시도
-    # ⚠️ 가정: user_profiles(user_id)만 NOT NULL이고 나머지는 기본값/NULL 허용
     try:
         db.execute(
             text(
@@ -71,7 +75,7 @@ def register_user(
             {"user_id": user.id},
         )
     except Exception:
-        # TODO: 운영 시에는 로깅으로 남기고, 여기서 예외는 잠시 무시
+        # TODO: 운영 환경에서는 로깅 필요
         pass
 
     db.commit()
@@ -89,19 +93,24 @@ def login(
     payload: UserLoginRequest,
     db: Session = Depends(get_db),
 ):
+    """
+    로그인
+
+    - login_id 기준으로 유저 조회
+    - soft delete / status 체크
+    - 비밀번호 검증 후 JWT 토큰 발급
+    """
     user = (
         db.query(User)
-        .filter(User.login_id == payload.login_id)
+        .filter(
+            User.login_id == payload.login_id,
+            User.is_deleted == False,  # noqa: E712
+            User.status == "active",
+        )
         .first()
     )
 
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="로그인 ID 또는 비밀번호가 올바르지 않습니다.",
-        )
-
-    if not verify_password(payload.password, user.password_hash):
+    if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="로그인 ID 또는 비밀번호가 올바르지 않습니다.",
@@ -126,4 +135,7 @@ def login(
 async def read_me(
     current_user: User = Depends(get_current_user),
 ):
+    """
+    현재 토큰 기준 내 정보 조회
+    """
     return UserRead.model_validate(current_user)

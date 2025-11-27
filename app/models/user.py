@@ -1,38 +1,20 @@
 # app/models/user.py
+"""
+Legacy import shim for User model.
 
-from datetime import datetime
+To avoid defining the 'users' table twice in SQLAlchemy metadata,
+this module simply re-exports the canonical User ORM model
+defined in app.db.models.
 
-from sqlalchemy import Column, DateTime, Integer, String, Text
-from sqlalchemy.sql import func
+New code SHOULD import from `app.db.models` directly:
+    from app.db import models
+    user = models.User(...)
 
-from app.db.session import Base
+Existing code that does:
+    from app.models.user import User
+will continue to work, but no longer creates a second table definition.
+"""
 
+from app.db import models
 
-class User(Base):
-    __tablename__ = "users"
-
-    id = Column(Integer, primary_key=True, index=True)
-    # intersection 로그인용 ID (unique)
-    login_id = Column(String, unique=True, nullable=False, index=True)
-
-    # 해시된 비밀번호
-    password_hash = Column(Text, nullable=False)
-
-    # 실명 / 닉네임
-    real_name = Column(String, nullable=False)
-    nickname = Column(String, nullable=False)
-
-    # 이메일 (nullable)
-    email = Column(String, nullable=True, unique=False)
-
-    created_at = Column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-    )
-    updated_at = Column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-        onupdate=func.now(),
-    )
+User = models.User

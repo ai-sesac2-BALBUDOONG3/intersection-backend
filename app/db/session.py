@@ -1,20 +1,25 @@
-# app/db/session.py
+from __future__ import annotations
+
+from typing import Generator
 
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.orm import declarative_base, sessionmaker
 
-from app.core.config import settings
+from app.core.settings import get_settings
 
-# Azure PostgreSQL Flexible Server용 엔진
+settings = get_settings()
+
+# ===== SQLAlchemy Base =====
+Base = declarative_base()
+
+# ===== Engine / Session =====
+# Azure PostgreSQL 접속 (sslmode=require 는 settings.database_url 에 이미 포함)
 engine = create_engine(
-    settings.sqlalchemy_database_uri,
-    pool_pre_ping=True,   # 죽은 커넥션 자동 감지
-    pool_size=5,
-    max_overflow=10,
+    settings.database_url,
+    pool_pre_ping=True,
     future=True,
 )
 
-# 세션 팩토리
 SessionLocal = sessionmaker(
     autocommit=False,
     autoflush=False,
@@ -22,13 +27,10 @@ SessionLocal = sessionmaker(
     future=True,
 )
 
-# Base: 모델들이 여기서 상속받는다고 가정 (기존 모델에서 import해서 사용)
-Base = declarative_base()
 
-
-def get_db():
+def get_db() -> Generator:
     """
-    FastAPI 의 Depends 에서 사용할 DB 세션 의존성.
+    FastAPI 의존성으로 사용하는 DB 세션 생성기.
     """
     db = SessionLocal()
     try:

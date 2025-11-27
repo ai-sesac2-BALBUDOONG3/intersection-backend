@@ -1,47 +1,114 @@
 # app/services/matching_explanation.py
+import json
+import os
+from typing import Dict, List
 
-from typing import Optional
+from openai import AzureOpenAI
+from pydantic import BaseModel
 
-from app.services.azure_openai import chat_completion
+from app.schemas.matching import MatchRecommendation
 
 
-def build_explanation_with_fallback(
-    base_school_name: str,
-    base_year_range: str,
-    cand_nickname: str,
-    cand_school_name: str,
-    cand_year_range: str,
-) -> str:
+class SimpleUserContext(BaseModel):
+    id: int
+    nickname: str
+
+
+def _get_azure_client() -> AzureOpenAI:
     """
-    Azure OpenAI가 설정되어 있으면 GPT로 설명을 만들고,
-    아니면 기본 문장으로 대체.
+    Azure OpenAI 클라이언트 생성.
+    .env에서 아래 환경변수 사용:
+      - AZURE_OPENAI_ENDPOINT
+      - AZURE_OPENAI_API_KEY
+      - AZURE_OPENAI_CHAT_API_VERSION (없으면 기본값 사용)
     """
+    endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+    api_key = os.getenv("AZURE_OPENAI_API_KEY")
+    # 사용자가 .env에 이미 설정해둔 값을 우선 사용
+    api_version = os.getenv("AZURE_OPENAI_CHAT_API_VERSION", "2025-01-01-preview")
+
+    if not endpoint or not api_key:
+        raise RuntimeError(
+            "AZURE_OPENAI_ENDPOINT / AZURE_OPENAI_API_KEY 환경변수가 설정되어 있지 않습니다."
+        )
+
+    return AzureOpenAI(
+        api_key=api_key,
+        api_version=api_version,
+        azure_endpoint=endpoint,
+    )
+
+
+def generate_match_reasons(
+    current_user: SimpleUserContext,
+    candidates: List[MatchRecommendation],
+) -> Dict[int, str]:
+    """
+    gpt-4o-mini를 사용해 각 후보별 추천 이유 한 줄 생성.
+    반환값: {candidate_user_id: reason_ko}
+    """
+    if not candidates:
+        return {}
+
+    client = _get_azure_client()
+    # .env에 이미 있는 값과 맞춤
+    deployment = os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT", "gpt-4o-mini")
+
+    # 프롬프트에 넘길 최소 정보만 구성
+    payload = {
+        "current_user": current_user.model_dump(),
+        "candidates": [
+            {
+                "candidate_user_id": c.candidate_user_id,
+                "nickname": c.nickname,
+                "scores": c.scores.model_dump(),
+            }
+            for c in candidates
+        ],
+    }
+
     system_prompt = (
-        "당신은 사람 매칭 서비스의 설명 문구를 작성하는 어시스턴트입니다. "
-        "두 사람이 같은 학교/비슷한 시기에 다녔다는 정보로, "
-        "부드럽고 짧은 한국어 한 문장으로 '왜 매칭되었는지' 설명해 주세요. "
-        "과장은 하지 말고, 존댓말로 작성하세요."
+        "너는 기억 교집합 기반 친구찾기 앱 'Intersection'의 추천 이유를 만들어주는 카피라이터야.\n"
+        "응답은 반드시 JSON 형식의 리스트로만 반환해야 한다.\n"
+        "각 원소는 {\"candidate_user_id\": number, \"reason\": string} 형식이다.\n"
+        "reason은 한국어 한 문장, 40자 이내로 따뜻하고 구체적으로 작성해라.\n"
+        "점수가 높은 요소(학교, 지역, 연도, 키워드)를 위주로 설명하되 점수 숫자는 노출하지 않는다."
     )
 
-    user_content = (
-        f"기준 사용자: {base_school_name} {base_year_range} 재학.\n"
-        f"후보 사용자({cand_nickname}): {cand_school_name} {cand_year_range} 재학.\n"
-        "두 사람이 왜 매칭 후보가 되었는지 한 줄로 설명해 주세요."
+    user_prompt = (
+        "아래 current_user와 후보자 리스트, 점수 정보를 보고,\n"
+        "각 후보자별로 한 줄짜리 추천 이유를 만들어줘.\n"
+        "JSON 외의 다른 텍스트는 절대 포함하지 말 것.\n\n"
+        f"{json.dumps(payload, ensure_ascii=False)}"
     )
 
-    ai_result: Optional[str] = chat_completion(system_prompt, user_content)
+    response = client.chat.completions.create(
+        model=deployment,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.6,
+        max_tokens=512,
+    )
 
-    if ai_result:
-        return ai_result
+    content = response.choices[0].message.content.strip()
 
-    # Fallback 기본 문장
-    if base_school_name == cand_school_name:
-        return (
-            f"두 분 모두 {base_school_name}에서 비슷한 시기에 "
-            f"다니셨던 것으로 보여 함께 기억을 나누기 좋은 인연일 수 있어요."
-        )
-    else:
-        return (
-            f"{cand_nickname}님은 비슷한 시기의 인근 학교를 다니신 분으로, "
-            f"당시의 추억을 공유하기 좋은 후보로 보여요."
-        )
+    reasons: Dict[int, str] = {}
+
+    try:
+        data = json.loads(content)
+        if isinstance(data, list):
+            for item in data:
+                cid = item.get("candidate_user_id")
+                reason = item.get("reason")
+                if isinstance(cid, int) and isinstance(reason, str):
+                    reasons[cid] = reason.strip()
+    except json.JSONDecodeError:
+        # 파싱 실패 시, fallback: 공통 멘트
+        for c in candidates:
+            reasons[c.candidate_user_id] = (
+                "같은 시기와 비슷한 학교/지역에서 생활했던 인연일 가능성이 높아요."
+            )
+
+    return reasons
