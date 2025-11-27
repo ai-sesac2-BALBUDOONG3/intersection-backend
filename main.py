@@ -21,19 +21,14 @@ app = FastAPI(
 )
 
 # ----------------------------------------------------
-# CORS 설정
-#  - Flutter Web: http://localhost:포트번호 (포트는 매번 바뀌어도 허용)
-#  - 나중에 실제 프론트 도메인 생기면 origins 리스트에 추가
+# CORS 설정 (Flutter Web + 나중에 모바일 앱까지 고려)
+#  - 테스트용으로 모든 Origin 허용
+#  - 쿠키는 쓰지 않으므로 allow_credentials=False
 # ----------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
-    # localhost:임의포트 모두 허용 (flutter run -d chrome)
-    allow_origin_regex=r"^http://localhost(:\d+)?$",
-    # 추후 배포된 프론트엔드 도메인 추가 예정
-    allow_origins=[
-        # 예시) "https://intersection-frontend.example.com",
-    ],
-    allow_credentials=True,
+    allow_origins=["*"],          # ★ 일단 전부 허용
+    allow_credentials=False,      # ★ 쿠키 안 쓰니까 False로
     allow_methods=["*"],
     allow_headers=["*"],
 )
