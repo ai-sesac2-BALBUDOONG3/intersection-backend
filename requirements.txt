@@ -8,7 +8,10 @@ python-dotenv==1.0.1
 pydantic==2.9.2
 pydantic-settings==2.5.2
 
-passlib[bcrypt]==1.7.4
+# 비밀번호 해시용: passlib + argon2 백엔드
+passlib[argon2]==1.7.4
+argon2-cffi
+
 python-jose[cryptography]==3.3.0
 
 openai==1.57.0

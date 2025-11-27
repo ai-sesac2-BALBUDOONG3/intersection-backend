@@ -14,8 +14,15 @@ from app.core.config import settings
 from app.db.session import get_db
 from app.db import models
 
+# =====================================
 # 비밀번호 해시/검증용 컨텍스트
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+#  - bcrypt 대신 argon2만 사용
+# =====================================
+pwd_context = CryptContext(
+    schemes=["argon2"],
+    default="argon2",
+    deprecated="auto",
+)
 
 # JWT 설정
 ALGORITHM = "HS256"
@@ -26,10 +33,16 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """
+    평문 비밀번호와 저장된 해시를 비교 (argon2).
+    """
     return pwd_context.verify(plain_password, hashed_password)
 
 
 def get_password_hash(password: str) -> str:
+    """
+    평문 비밀번호를 argon2 해시로 변환.
+    """
     return pwd_context.hash(password)
 
 
@@ -51,7 +64,7 @@ def create_access_token(
     }
     encoded_jwt = jwt.encode(
         to_encode,
-        settings.secret_key,
+        settings.secret_key,  # app.core.config.settings.secret_key 사용
         algorithm=ALGORITHM,
     )
     return encoded_jwt
