@@ -12,6 +12,7 @@ from app.api.routes import (
     matching_router,
     communities_router,
     anchors_router,
+    friends_router,  # ★ 신규 추가
 )
 
 # ----------------------------------------------------
@@ -54,6 +55,7 @@ app.include_router(school_histories_router)
 app.include_router(matching_router)
 app.include_router(communities_router)
 app.include_router(anchors_router)
+app.include_router(friends_router)  # ★ 신규 추가
 
 
 @app.get("/", tags=["health"])
